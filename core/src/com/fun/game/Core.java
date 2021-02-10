@@ -3,18 +3,26 @@ package com.fun.game;
 import com.badlogic.gdx.ApplicationAdapter;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
+import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.OrthographicCamera;
+import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.maps.MapProperties;
 import com.badlogic.gdx.maps.tiled.TiledMap;
 import com.badlogic.gdx.maps.tiled.TmxMapLoader;
 import com.badlogic.gdx.maps.tiled.renderers.OrthogonalTiledMapRenderer;
 import com.badlogic.gdx.math.Vector2;
+import com.badlogic.gdx.scenes.scene2d.Stage;
+import com.badlogic.gdx.scenes.scene2d.ui.Label;
+import com.badlogic.gdx.scenes.scene2d.ui.Table;
 import com.badlogic.gdx.utils.viewport.FillViewport;
 
+import java.util.ArrayList;
+import java.util.Random;
+
 public class Core extends ApplicationAdapter {
-	private float timePassed = 0.1f;
+	private float timePassed = 0;
 	private SpriteBatch batch;
 
 	private OrthographicCamera camera;
@@ -27,6 +35,16 @@ public class Core extends ApplicationAdapter {
 	private Dog dog;
 
 	private Bird bird;
+	private ArrayList<Bird> birdList;
+	private float recentBirdX = 0;
+	private float recentBirdY = 0;
+	private float birdListSize = 0;
+	private boolean poofPlaying = false;
+
+	private ArrayList<Poof> poofList;
+
+	private Stage stage;
+	private Label scoreLabel;
 
 	@Override
 	public void create() {
@@ -47,10 +65,30 @@ public class Core extends ApplicationAdapter {
 		this.dog = new Dog(36, 36);
 		this.bird = new Bird(40, 40);
 
+		this.birdList = new ArrayList<>();
+		this.birdList.add(this.bird);
+
+		this.poofList = new ArrayList<>();
+
 		this.camera.position.x = this.dog.x;
 		this.camera.position.y = this.dog.y;
 
 		this.mapProperties = this.map.getProperties();
+
+//		this.stage = new Stage();
+
+		// https://stackoverflow.com/questions/44831368/how-can-i-show-texts-like-score-or-time-in-libgdx
+//		Label.LabelStyle labelStyle = new Label.LabelStyle(new BitmapFont(), Color.RED);
+//		this.scoreLabel = new Label(String.format("%03d",0),labelStyle);
+//
+//		Table table = new Table();
+//		table.defaults().pad(2);
+//
+//		table.add(new Label("SCORE :", labelStyle));
+//		table.add(this.scoreLabel);
+//		table.setPosition(200,300);
+//
+//		this.stage.addActor(table);
 	}
 
 	@Override
@@ -65,30 +103,111 @@ public class Core extends ApplicationAdapter {
 		this.camera.position.y += (this.dog.y + 2 - this.camera.position.y) * 3.4 * (1/60f);
 
 		this.dog.boundingBox.setPosition(this.dog.x, this.dog.y);
-
-		this.batch.begin();
-
-		checkCollisions();
-
 		this.renderer.setView(this.camera);
 		this.renderer.render();
-		this.batch.draw(this.bird.animation.getKeyFrame(this.timePassed, true), this.bird.x, this.bird.y, 2, 1.5f);
+
+		this.batch.begin();
+//		this.stage.draw();
+//		this.stage.act();
+
+		checkCollisions();
+		checkVictory();
 
 		int moveInput = movementInput();
 		physicalMovement(moveInput);
 		movingAround(moveInput);
+
+		if (this.birdList.size() > this.birdListSize) {
+			this.birdListSize = this.birdList.size();
+			this.recentBirdX = this.birdList.get(this.birdList.size() - 1).x;
+			this.recentBirdY = this.birdList.get(this.birdList.size() - 1).y;
+		}
+
+		for (Poof poof: this.poofList) {
+			poof.update(this.timePassed);
+		}
+
+		spawnBirds();
+		drawBirds();
+		followDog();
+
+		this.batch.draw(new Poof(this.recentBirdX, this.recentBirdY).spawnAnimation.getKeyFrame(this.timePassed, true), this.recentBirdX, this.recentBirdY, 2, 1.5f);
 
 		this.batch.end();
 
 		keepCameraInBounds();
 	}
 
+	public void spawnBirds() {
+		if (new Random().nextInt(120) == 1) {
+			int birdX = (int) this.dog.x - new Random().nextInt(5);
+			int birdY = (int) this.dog.y - new Random().nextInt(5);
+
+			this.birdList.add(new Bird(birdX, birdY));
+			this.poofList.add(new Poof(birdX, birdY));
+		}
+	}
+
+	public void drawBirds() {
+		for (Bird bird: this.birdList) {
+			if (!(bird.lookingRight)) {
+				this.batch.draw(bird.animation.getKeyFrame(this.timePassed, true), bird.x, bird.y, 2, 1.5f);
+			} else {
+				this.batch.draw(bird.animation.getKeyFrame(this.timePassed, true), bird.x + 1.2f, bird.y, -2, 1.5f);
+			}
+
+		}
+	}
+
+//	private void updateAndRenderPoofs(float deltaTime) {
+//		ListIterator<Poof> explosionListIterator = this.poofList.listIterator();
+//		while (explosionListIterator.hasNext()) {
+//			Poof poof = this.poofList.listIterator().next();
+//			poof.update(deltaTime);
+//			if (poof.isFinished()) {
+//				this.poofList.listIterator().remove();
+//			} else {
+//				poof.draw(batch);
+//			}
+//		}
+//	}
+
+
+	public void followDog() {
+		for (Bird bird: this.birdList) {
+			float randomNum = new Random().nextFloat() - 0.8f;
+			if (randomNum < 0) {
+				randomNum = 0.04f;
+			}
+
+			if (this.dog.x - bird.x > -0.8f) {
+				bird.lookingRight = true;
+				bird.x = bird.x + randomNum;
+			} else if (Math.abs(this.dog.x - bird.x) < 1f) {
+				bird.lookingRight = true;
+			} else {
+				bird.lookingRight = false;
+				bird.x = bird.x - randomNum;
+			}
+
+			if (this.dog.y - bird.y > -0.025f) {
+				bird.y = bird.y + randomNum;
+			} else if (this.dog.y - bird.y < 0.025f) {
+				bird.y = bird.y - randomNum;
+			}
+
+		}
+	}
+
+	public boolean checkVictory() {
+		return this.birdList.size() == 50;
+	}
+
 	public void checkCollisions() {
-		// Dog can be underneath bird and detect a collision, but it can be touching its wings and not.
-		// Says that x value of box needs to be a bit bigger, and y value needs to be a bit smaller.
-		// This is all from the left / bottom though.
-		if (this.bird.boundingBox.overlaps(this.dog.boundingBox)) {
-			System.out.println("Touching! :D");
+		for (Bird bird: this.birdList) {
+			if (bird.boundingBox.overlaps(this.dog.boundingBox)) {
+				System.out.println("Get touched! :D");
+			}
 		}
 	}
 
@@ -197,11 +316,21 @@ public class Core extends ApplicationAdapter {
 		this.renderer.dispose();
 		this.dog.animationAtlas.dispose();
 		this.bird.animationAtlas.dispose();
+//		this.stage.dispose();
+
+		for (Poof poof: this.poofList) {
+			poof.spawnAtlas.dispose();
+		}
+
+		for (Bird bird: this.birdList) {
+			bird.animationAtlas.dispose();
+		}
 	}
 
 	@Override
 	public void resize(int width, int height) {
 		this.viewport.update(width, height);
+//		this.stage.getViewport().update(width, height, true);
 	}
 
 	public void keepCameraInBounds() {
